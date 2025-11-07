@@ -57,6 +57,7 @@ void    PWM_capture(void);
 void    CAN_config(void);
 void 	RTC_config(void);
 void 	CMP_config(void);
+void 	CMP_disable(void);
 void	Ext_Vcc_Det(void);
 void 	WriteRTC(void);
 void    LCDShowTest(void);
@@ -75,14 +76,6 @@ void main(void)
     EAXFR = 1; //扩展寄存器(XFR)访问使能
     CKCON = 0; //提高访问XRAM速度
 
-//    P0M1 = 0x30;   P0M0 = 0x30;   //设置P0.4、P0.5为漏极开路(实验箱加了上拉电阻到3.3V)
-//    P1M1 = 0x30;   P1M0 = 0x30;   //设置P1.4、P1.5为漏极开路(实验箱加了上拉电阻到3.3V)
-//    P2M1 = 0x3c;   P2M0 = 0x3c;   //设置P2.2~P2.5为漏极开路(实验箱加了上拉电阻到3.3V)
-//    P3M1 = 0x50;   P3M0 = 0x50;   //设置P3.4、P3.6为漏极开路(实验箱加了上拉电阻到3.3V)
-//    P4M1 = 0x3c;   P4M0 = 0x3c;   //设置P4.2~P4.5为漏极开路(实验箱加了上拉电阻到3.3V)
-//    P5M1 = 0x0c;   P5M0 = 0x0c;   //设置P5.2、P5.3为漏极开路(实验箱加了上拉电阻到3.3V)
-//    P6M1 = 0xff;   P6M0 = 0xff;   //设置为漏极开路(实验箱加了上拉电阻到3.3V)
-//    P7M1 = 0x00;   P7M0 = 0x00;   //设置为准双向口
 	GPIO_config();
 	Timer_config();
 //	UART1_config(2);//寄存器串口
@@ -113,7 +106,7 @@ void main(void)
 //        EEPROM_SectorErase(EE_ADDRESS); //擦除一个扇区
 //    #endif
 	//====初始化数据=====
-
+	V_JRP = 0;
     while (1)
     {
 
@@ -162,7 +155,9 @@ void    PWM_capture(void)
 void	GPIO_config(void)
 {
 	P0_MODE_IO_PU(GPIO_Pin_All);//准双向口
-	P1_MODE_IO_PU(GPIO_Pin_All);//准双向口  
+	P1_MODE_IO_PU(GPIO_Pin_All);//准双向口
+//	P1_MODE_IO_PU(GPIO_Pin_LOW| GPIO_Pin_5|GPIO_Pin_6|GPIO_Pin_7);//准双向口
+//	P1_MODE_OUT_PP(GPIO_Pin_4);//P14电热膜开关，推挽输出	
 	P2_MODE_IO_PU(GPIO_Pin_All);//准双向口  
 	P3_MODE_IO_PU(GPIO_Pin_LOW);//准双向口  P30P31烧录口
 	P3_MODE_OUT_OD(GPIO_Pin_5);//P35开漏输出
@@ -259,7 +254,7 @@ void	RTC_config(void)
 	RTC_InitTypeDef		RTC_InitStructure;
 	RTC_InitStructure.RTC_Clock  = RTC_X32KCR;	//RTC 时钟, RTC_IRC32KCR, RTC_X32KCR
 	RTC_InitStructure.RTC_Enable = ENABLE;			//RTC功能使能,   ENABLE, DISABLE
-	RTC_InitStructure.RTC_Year   = 21;					//RTC 年, 00~99, 对应2000~2099年
+	RTC_InitStructure.RTC_Year   = 25;					//RTC 年, 00~99, 对应2000~2099年
 	RTC_InitStructure.RTC_Month  = 12;					//RTC 月, 01~12
 	RTC_InitStructure.RTC_Day    = 31;					//RTC 日, 01~31
 	RTC_InitStructure.RTC_Hour   = 23;					//RTC 时, 00~23
@@ -289,6 +284,20 @@ void	CMP_config(void)
 	CMP_Inilize(&CMP_InitStructure);				//初始化比较器
 	NVIC_CMP_Init(RISING_EDGE|FALLING_EDGE,Priority_0);	//中断使能, RISING_EDGE/FALLING_EDGE/DISABLE; 优先级(低到高) Priority_0,Priority_1,Priority_2,Priority_3
 }
+/************************ 比较器配置 ****************************/
+void	CMP_disable(void)
+{
+	CMP_InitDefine CMP_InitStructure;						//结构定义
+	CMP_InitStructure.CMP_EN = DISABLE;								//允许比较器		ENABLE,DISABLE
+	CMP_InitStructure.CMP_P_Select     = CMP_P_P37;		//比较器输入正极选择, CMP_P_P37/CMP_P_P50/CMP_P_P51, CMP_P_ADC: 由ADC模拟输入端做正输入.
+	CMP_InitStructure.CMP_N_Select     = CMP_N_GAP;		//比较器输入负极选择, CMP_N_GAP: 选择内部BandGap经过OP后的电压做负输入, CMP_N_P36: 选择P3.6做负输入.
+	CMP_InitStructure.CMP_InvCMPO      = DISABLE;			//比较器输出取反, 	ENABLE,DISABLE
+	CMP_InitStructure.CMP_100nsFilter  = ENABLE;			//内部0.1us滤波,  	ENABLE,DISABLE
+	CMP_InitStructure.CMP_Outpt_En     = ENABLE;			//允许比较结果输出,ENABLE,DISABLE
+	CMP_InitStructure.CMP_OutDelayDuty = 16;					//比较结果变化延时周期数, 0~63
+	CMP_Inilize(&CMP_InitStructure);				//初始化比较器
+	NVIC_CMP_Init(RISING_EDGE|FALLING_EDGE,Priority_0);	//中断使能, RISING_EDGE/FALLING_EDGE/DISABLE; 优先级(低到高) Priority_0,Priority_1,Priority_2,Priority_3
+}
 
 void PWMA_ISR() interrupt 26
 {
@@ -298,6 +307,7 @@ void PWMA_ISR() interrupt 26
 		PWMA_SR1 &= ~0x02;
 		cnt = (PWMA_CCR1H <<8) + PWMA_CCR1L;  //CC1捕获周期宽度
 //		zhouqi = cnt;
+		
 	}
 	
 	if(PWMA_SR1 & 0x04)
@@ -345,24 +355,30 @@ void WriteRTC(void)
 void Ext_Vcc_Det(void)
 {
     P35 = 0;        //比较时，对外输出0，做比较电路的地线
-    CMPEN = 1;     //使能比较器模块
+    CMP_config();    //使能比较器模块
     _nop_();
     _nop_();
     _nop_();
     if(CMPRES)     //判断是否CMP+电平高于CMP-，外部电源连接
     {
         P40 = 0;		//LED Power On
+		printf("外部电源连接\r\n"); 
 		if(T0_5S)
 		{
 			printf("T0_5S:%d\r\n",T0_5S);  
 			T0_5S =0;		
-			LCD_Init();			
+			LCD_Init();	
+//			V_JRP = 0;	
+			printf("V_JRP:%d\r\n",V_JRP); 
 		}
 		if(T0_1S)
 		{
             printf("T0_1S:%d\r\n",T0_1S); 
             T0_1S =0;
       
+//			if(P32==0)   printf("P32:%d\r\n",P32); 
+//			else printf("P32:%d\r\n",P32); 
+				
 		}
 		if(T0_1ms)
 		{
@@ -371,8 +387,10 @@ void Ext_Vcc_Det(void)
     }
     else
     {
-        CMPEN = 0;      //关闭比较器模块
-        P35 = 1;        //不比较时，对外设置为1，I/O口浮空，省电
+		printf("休眠\r\n"); 
+		CMP_disable();
+//        CMPEN = 0;      //关闭比较器模块
+//        P35 = 1;        //不比较时，对外设置为1，I/O口浮空，省电(浮空后MCU无法唤醒)
         P40 = 1;		//LED Power Off
         _nop_();
         _nop_();
