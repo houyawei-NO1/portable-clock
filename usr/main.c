@@ -48,6 +48,12 @@ u8  sava_data[2];     //存储数组
 u8  hour,minute,second; //RTC变量
 u16 msecond;
 
+char code *STCRTC  = "@STCRTC#";    //= "@STCRTC#";  命令头   
+char indexrtc=0;                    //当前的命令头索引
+char length =0;                     //长度
+char rtctime[12] ;               //rtc时间数据
+bit  Rec_OK = 0;                    //rtc时间获取完成标志
+
 /*************  本地函数声明    **************/
 
 void	Timer_config(void);
@@ -61,6 +67,7 @@ void 	CMP_disable(void);
 void	Ext_Vcc_Det(void);
 void 	WriteRTC(void);
 void    LCDShowTest(void);
+void    RX1_Check(void);
 /****************  外部函数声明和外部变量声明 *****************/
 
 extern bit B_1S;//RTC
@@ -334,14 +341,25 @@ void PWMA_ISR() interrupt 26
 /********************** 写RTC函数 ************************/
 void WriteRTC(void)
 {
-    INIYEAR = YEAR;   //继承当前年月日
-    INIMONTH = MONTH;
-    INIDAY = DAY;
-
-    INIHOUR = hour;   //修改时分秒
-    INIMIN = minute;
-    INISEC = 0;
-    INISSEC = 0;
+//	printf("%02d%02d年%d月%d日\t",(int)rtctime[0],(int)rtctime[1],(int)rtctime[2],(int)rtctime[3]);
+//	printf("%d：%d：%d.%d\t",(int)rtctime[5],(int)rtctime[6],(int)rtctime[7],(int)((u16)(rtctime[9]*256)|(u8)rtctime[10]));
+//	printf("%d\r\n",(int)rtctime[8]);
+//            INIYEAR = rtctime[1];     //Y:2021            //单片机内部rtc时钟初始化的办法
+//            INIMONTH = rtctime[2];    //M:12
+//            INIDAY = rtctime[3];      //D:31
+//            INIHOUR = rtctime[5];     //H:23
+//            INIMIN =rtctime[6];      //M:59
+//            INISEC = rtctime[7];      //S:50
+//            INISSEC = rtctime[8];      //S/128:0
+//            RTCCFG |= 0x01;   //触发RTC寄存器初始化
+            
+    INIYEAR = rtctime[1];   
+    INIMONTH = rtctime[2];
+    INIDAY = rtctime[3];
+    INIHOUR = rtctime[5];   //修改时分秒
+    INIMIN = rtctime[6];
+    INISEC = rtctime[7];
+    INISSEC = rtctime[8];
     RTCCFG |= 0x01;   //触发RTC寄存器初始化
 }
 
@@ -378,11 +396,36 @@ void Ext_Vcc_Det(void)
       
 //			if(P32==0)   printf("P32:%d\r\n",P32); 
 //			else printf("P32:%d\r\n",P32); 
-				
+//			if(P74==0)   printf("P74:%d\r\n",P74); 
+//			else printf("P74:%d\r\n",P74); 
+//			if(P75==0)   printf("P75:%d\r\n",P75); 
+//			else printf("P75:%d\r\n",P75); 
+//			if(P76==0)   printf("P76:%d\r\n",P76); 
+//			else printf("P76:%d\r\n",P76); 
+//			if(P77==0)   printf("P77:%d\r\n",P77); 
+//			else printf("P77:%d\r\n",P77); 	
+		if( Rec_OK==1 )
+			{
+			WriteRTC();
+            Rec_OK = 0;            
+			}   			
+		
 		}
 		if(T0_1ms)
 		{
 			T0_1ms = 0;
+			if(COM1.RX_TimeOut > 0)		//超时计数
+			{
+				if(--COM1.RX_TimeOut == 0)
+				{
+					if(COM1.RX_Cnt > 0)
+					{
+						RX1_Check();
+
+					}
+					COM1.RX_Cnt = 0;
+				}
+			}
 		}
     }
     else
@@ -429,4 +472,52 @@ void    LCDShowTest(void)
 		LCD_ShowChinese(100,35,"欢迎使用东方红农业装备",RED,WHITE,16,0);
 		
 		delay_ms(5000);
+}
+
+/**************** 串口1处理函数 ****************************/
+
+void RX1_Check(void)
+{
+    u8  i,dat;
+//	printf("收到内容如下：   %d",COM1.RX_Cnt);
+//	for(i=0; i<COM1.RX_Cnt; i++)    printf("%d,%c\r\n",i, RX1_Buffer[i]);    //把收到的数据原样返回,用于测试
+//	printf("\r\n");
+	
+	//-------------------------------串口RTC对时 -------------------------------   
+	for(i=0; i<COM1.RX_Cnt; i++)
+	{
+	
+//		printf("%d,%c\r\n",i, (int)RX1_Buffer[i]); 
+//		
+		//数据接收
+		 if( length>0 )
+        {     
+            rtctime[length-1]=RX1_Buffer[i];
+            length++;
+            if( length>=12 )
+            {
+                length = 0;
+                Rec_OK = 1;
+                indexrtc=0;
+            }
+        }      
+		
+		//头部接收
+		 if (RX1_Buffer[i] == STCRTC[ indexrtc])
+        {
+            indexrtc++;
+            if(STCRTC[indexrtc] == '\0')
+            {
+                length = 1;   //开启接收
+                indexrtc=0;
+            }
+        }
+        else
+        {
+            indexrtc = 0;
+            if (RX1_Buffer[i] ==STCRTC[ indexrtc])
+                indexrtc++;
+        }         
+	}
+    
 }
