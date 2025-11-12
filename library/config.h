@@ -51,6 +51,11 @@ sbit LCD_BLK = P2 ^ 5;  // 背光控制管脚
 
 sbit V_JRP = P1^4;
 
+sbit left_key=P7^4;
+sbit red_key=P7^5;
+sbit add_key=P7^6;
+sbit right_key=P7^7;
+
 /********************精确延时函数************/
 #if (MAIN_Fosc >= 40000000L)
     #define		usrNOP()    _nop_();_nop_();_nop_();_nop_();_nop_();_nop_();_nop_();_nop_();_nop_();_nop_();_nop_();_nop_()

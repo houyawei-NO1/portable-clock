@@ -46,10 +46,10 @@ float NTC_ADC_convert(u8 chn)
     
     printf("12bit: ADC%02d=%04u  ",chn,j);  //输出ADC值
     
-//    vADC = ((float)j * 5.0 / 4096);  //计算NTC电压, Vref=5.0V
+//    vADC = ((float)j * 2.8 / 4096);  //计算NTC电压, Vref=5.0V
 //    printf("电压:%fV  ",vADC);
     
-    vADC = CalculationPTC100Temperature(j); //计算温度值
+    vADC = CalculationTemperature(j); //计算温度值
 //    printf("T=%f °C\r\n",vADC);
 	return vADC;
 
@@ -64,24 +64,42 @@ float NTC_ADC_convert(u8 chn)
 
 
 /******************** 计算NTC温度 *********************/
+#define ADC_VREF 2.89f     // ADC 参考，测得 2.8V
+#define DIV_VSUP 3.12f     // 分压上端电压 (R20 接的 VCC)。请确认并替换为实测值
+#define R_SERIES 6040.0f  // 固定串联电阻 R1 = 10k
+#define NTC_R25 10000.0f   // NTC 在 25°C 名义阻值 R0 = 10k
+#define NTC_B   3950.0f    // NTC Beta 值
 
-#define     Vref     5.0
 float CalculationTemperature(u16 adc)
 {
-    float Temperature=0.0;
-    float R2=0.0;
-    float R1=10000.0;
-    float T2=298.15;//273.15+25;
-    float B=3470.0;//3435.0-》3950
-    float K=273.15;
-    float R2V=0.0;
+    const float T0 = 25.0f + 273.15f; // 25°C in Kelvin
+    const float B = NTC_B;
+    float v_adc;
+    float r_ntc;
+    float tempK, tempC;
 
-    R2V=(adc*(Vref/4096));    //12位ADC
-    R2=(R2V*R1)/(Vref-R2V);
-	// printf("Rntc=%f Ω\r\n",R2);
-    Temperature=1.0/(1.0/T2+log(R2/5000.0)/B)-K+0.5;
+    if (adc == 0) {
+        // ADC 读到 0，表示 Vadc=0，NTC 可能短路或测量无效，返回一个极低温度或特殊值
+        return -100.0f;
+    }
+    if (adc >= 4095) {
+        // ADC 接近满量程，分母将趋近于0，认为 NTC 阻值极大（开路/超量程）
+        return 150.0f; // 返回一个上限温度（根据传感器范围调整）
+    }
 
-    return Temperature;
+    // ADC -> 电压 (使用 4095 作为满量程)
+    v_adc = (float)adc * (ADC_VREF / 4095.0f);
+	printf("电压:%fV  ",v_adc);
+
+    // 计算 NTC 电阻：假设电路为 Vref -- R_SERIES -- Vadc -- NTC -- GND
+    // r_ntc = (v_adc * R_SERIES) / (VREF - v_adc);
+	r_ntc = (v_adc * R_SERIES) / (DIV_VSUP - v_adc);
+	printf("电阻:%f欧  ",r_ntc);
+    // Beta 公式（自然对数）
+    tempK = 1.0f / ( (1.0f / T0) + (log(r_ntc / NTC_R25) / B) );
+    tempC = tempK - 273.15f;
+
+    return tempC;
 }
 
 /******************** 计算PTC100温度 *********************/

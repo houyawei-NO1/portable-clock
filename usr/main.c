@@ -37,22 +37,30 @@
 extern bit T0_1ms;
 extern bit T0_1S;//1s标志
 extern bit T0_5S;//5s标志
-
+extern u16 delay_ms_20S;//20s延时，超过熄屏
 /*************  IO口定义    **************/
 
 
 /*************  本地变量声明    **************/
-
-
+bit Sleep_sta = 0;
+bit Sleep_last;
+bit LCD_Sleep_sta = 0;
+bit LCD_Sleep_last;
+bit update_lcd_flag;//是否需要更新LCD
+bit first_show = 1;  // 首次显示标志
 u8  sava_data[2];     //存储数组
-u8  hour,minute,second; //RTC变量
-u16 msecond;
+u8  left_key_cnt,left_key_flag;//左，返回键
+u8  red_key_cnt,red_key_flag;//-键
+u8  add_key_cnt,add_key_flag;//+键
+u8  right_key_cnt,right_key_flag;//右，确认键
 
 char code *STCRTC  = "@STCRTC#";    //= "@STCRTC#";  命令头   
 char indexrtc=0;                    //当前的命令头索引
 char length =0;                     //长度
 char rtctime[12] ;               //rtc时间数据
 bit  Rec_OK = 0;                    //rtc时间获取完成标志
+
+float ntc_wendu;
 
 /*************  本地函数声明    **************/
 
@@ -67,7 +75,12 @@ void 	CMP_disable(void);
 void	Ext_Vcc_Det(void);
 void 	WriteRTC(void);
 void    LCDShowTest(void);
+void    LCDShowTime(void);
+void    LCDTurnOn(void);
+void    LCDTurnOff(void);
+void    update_lcd(void);
 void    RX1_Check(void);
+void    anjian_check(void);
 /****************  外部函数声明和外部变量声明 *****************/
 
 extern bit B_1S;//RTC
@@ -114,6 +127,8 @@ void main(void)
 //    #endif
 	//====初始化数据=====
 	V_JRP = 0;
+	delay_ms_20S = 0 ;
+	LCD_Init();	
     while (1)
     {
 
@@ -165,7 +180,9 @@ void	GPIO_config(void)
 	P1_MODE_IO_PU(GPIO_Pin_All);//准双向口
 //	P1_MODE_IO_PU(GPIO_Pin_LOW| GPIO_Pin_5|GPIO_Pin_6|GPIO_Pin_7);//准双向口
 //	P1_MODE_OUT_PP(GPIO_Pin_4);//P14电热膜开关，推挽输出	
-	P2_MODE_IO_PU(GPIO_Pin_All);//准双向口  
+	P2_MODE_OUT_OD(GPIO_Pin_LOW| GPIO_Pin_4 |GPIO_Pin_5);//屏幕，准双向口  
+	P2_PULL_UP_ENABLE(GPIO_Pin_LOW| GPIO_Pin_4 |GPIO_Pin_5);// 开漏加内部上拉，简单等同准双向口
+	P2_MODE_IO_PU(GPIO_Pin_6|GPIO_Pin_7);//准双向口  
 	P3_MODE_IO_PU(GPIO_Pin_LOW);//准双向口  P30P31烧录口
 	P3_MODE_OUT_OD(GPIO_Pin_5);//P35开漏输出
 	P3_MODE_IN_HIZ(GPIO_Pin_7);//P37高阻输入
@@ -372,38 +389,43 @@ void WriteRTC(void)
 //========================================================================
 void Ext_Vcc_Det(void)
 {
+	
     P35 = 0;        //比较时，对外输出0，做比较电路的地线
     CMP_config();    //使能比较器模块
     _nop_();
     _nop_();
     _nop_();
+	
     if(CMPRES)     //判断是否CMP+电平高于CMP-，外部电源连接
     {
-        P40 = 0;		//LED Power On
+        Sleep_sta = 0;
+		if(Sleep_last == 1) 
+		{
+			LCDTurnOn();	
+			first_show = 1; // 恢复供电后，下一次更新时间时，重新初始化显示
+		}
 		printf("外部电源连接\r\n"); 
+		
+		if(delay_ms_20S > 20*1000) 
+			{	
+				// if(LCD_Sleep_last==0)LCDTurnOff();	//20S 超时，并且屏幕启动的时候去休眠屏幕
+				delay_ms_20S = 20*1000+1;//避免计时超时溢出
+			}
 		if(T0_5S)
 		{
 			printf("T0_5S:%d\r\n",T0_5S);  
-			T0_5S =0;		
-			LCD_Init();	
+			T0_5S =0;			
 //			V_JRP = 0;	
 			printf("V_JRP:%d\r\n",V_JRP); 
+			ntc_wendu = NTC_ADC_convert(5);		//发送固定通道AD值
+			printf("NTC测量温度为%f °C\r\n",ntc_wendu);
 		}
 		if(T0_1S)
 		{
             printf("T0_1S:%d\r\n",T0_1S); 
             T0_1S =0;
-      
-//			if(P32==0)   printf("P32:%d\r\n",P32); 
-//			else printf("P32:%d\r\n",P32); 
-//			if(P74==0)   printf("P74:%d\r\n",P74); 
-//			else printf("P74:%d\r\n",P74); 
-//			if(P75==0)   printf("P75:%d\r\n",P75); 
-//			else printf("P75:%d\r\n",P75); 
-//			if(P76==0)   printf("P76:%d\r\n",P76); 
-//			else printf("P76:%d\r\n",P76); 
-//			if(P77==0)   printf("P77:%d\r\n",P77); 
-//			else printf("P77:%d\r\n",P77); 	
+			LCDShowTime();	
+	
 		if( Rec_OK==1 )
 			{
 			WriteRTC();
@@ -426,15 +448,19 @@ void Ext_Vcc_Det(void)
 					COM1.RX_Cnt = 0;
 				}
 			}
+			
+		anjian_check();
+		update_lcd();
 		}
     }
     else
     {
 		printf("休眠\r\n"); 
+		Sleep_sta = 1;
+		if(Sleep_last == 0)  LCDTurnOff();	
 		CMP_disable();
 //        CMPEN = 0;      //关闭比较器模块
 //        P35 = 1;        //不比较时，对外设置为1，I/O口浮空，省电(浮空后MCU无法唤醒)
-        P40 = 1;		//LED Power Off
         _nop_();
         _nop_();
         PCON = 0x02;  //STC32G 芯片使用内部32K时钟，休眠无法唤醒
@@ -445,11 +471,14 @@ void Ext_Vcc_Det(void)
         _nop_();
         _nop_();
     }
+	
+	Sleep_last = Sleep_sta;
+	LCD_Sleep_last = LCD_Sleep_sta;
 }
 void    LCDShowTest(void)
 {
 		LCD_Fill(0, 0, LCD_W, LCD_H, WHITE);
-        LCD_ShowPicture(86, 0, 105, 56, gImage_1);
+        // LCD_ShowPicture(86, 0, 105, 56, gImage_1);
         LCD_ShowString(13, 60, "2.25 TFT RESOLUTION:284x76 DRIVER IC:ST7789", RED, WHITE, 12, 0);
         delay_ms(1000);
         LCD_Fill(0, 0, LCD_W, LCD_H, WHITE);
@@ -468,10 +497,109 @@ void    LCDShowTest(void)
         LCD_Fill(LCD_W / 2, LCD_H / 2, LCD_W, LCD_H, WHITE);
         delay_ms(1000);
 		LCD_Fill(0, 0, LCD_W, LCD_H, WHITE);
-		LCD_ShowPicture(5, 5, 76, 62, tuolaji);
-		LCD_ShowChinese(100,35,"欢迎使用东方红农业装备",RED,WHITE,16,0);
+		// LCD_ShowPicture(5, 5, 76, 62, tuolaji);
+		LCD_ShowChinese(100,35,"欢迎使用",RED,WHITE,16,0);
 		
 		delay_ms(5000);
+}
+// 保存上一次显示的时间，用于判断是否需要更新
+static u8 last_year = 0xFF, last_month = 0xFF, last_day = 0xFF;
+static u8 last_hour = 0xFF, last_min = 0xFF, last_sec = 0xFF;
+static float last_temp = -999.0f;  // 保存上一次显示的温度
+
+
+void    LCDShowTime(void)
+{
+        char buf[32];  // 临时缓冲区，用于转换单个数字和温度字符串
+
+        // 首次显示时初始化整个屏幕
+        if(first_show)
+        {
+            LCD_Fill(0, 0, LCD_W, LCD_H, WHITE);
+			LCD_ShowPicture(0, 0, 76, 76, gImage_nainai);
+			LCD_ShowChinese(76,55,"侯亚威奶奶福如东海寿比南山",MAGENTA,WHITE,16,0);
+            LCD_ShowString(52, 0, "20", BLACK, WHITE, 24, 0);
+			sprintf(buf, "%02d", YEAR);
+            LCD_ShowString(52+24, 0, buf, BLACK, WHITE, 24, 0);
+            last_year = YEAR;
+            LCD_ShowString(52+24+24, 0, "-", BLACK, WHITE, 24, 0);   // 年月分隔符
+			sprintf(buf, "%02d", MONTH);
+            LCD_ShowString(52+24+12*3, 0, buf, BLACK, WHITE, 24, 0);
+            last_month = MONTH;
+            LCD_ShowString(52+24+12*5, 0, "-", BLACK, WHITE, 24, 0); // 月日分隔符
+			 sprintf(buf, "%02d", DAY);
+            LCD_ShowString(52+24+12*6, 0, buf, BLACK, WHITE, 24, 0);
+            last_day = DAY;
+            LCD_ShowString(52+24+12*8, 0, " ", BLACK, WHITE, 24, 0); // 日期和时间的分隔
+			 sprintf(buf, "%02d", HOUR);
+            LCD_ShowString(52+24+12*9, 0, buf, BLACK, WHITE, 24, 0);
+            last_hour = HOUR;
+            LCD_ShowString(52+24+12*11, 0, ":", BLACK, WHITE, 24, 0); // 时分分隔符
+			 sprintf(buf, "%02d", MIN);
+            LCD_ShowString(52+24+12*12, 0, buf, BLACK, WHITE, 24, 0);
+            last_min = MIN;
+            LCD_ShowString(52+24+12*14, 0, ":", BLACK, WHITE, 24, 0);// 分秒分隔符
+			sprintf(buf, "%02d", SEC);
+            LCD_ShowString(52+24+12*15, 0, buf, BLACK, WHITE, 24, 0);
+            last_sec = SEC;
+            
+            // 添加温度显示标签与值
+            sprintf(buf, "%.2f", ntc_wendu);
+            LCD_ShowString(185, 30, buf, BLACK, WHITE, 16, 0);
+            LCD_ShowChinese(235, 30, "摄氏度", BLACK, WHITE, 16, 0);
+            
+            first_show = 0;
+        }
+
+        // 只在值变化时更新相应位置的数字
+        if(YEAR != last_year)
+        {
+            sprintf(buf, "%02d", YEAR);
+            LCD_ShowString(52+24, 0, buf, BLACK, WHITE, 24, 0);
+            last_year = YEAR;
+        }
+        if(MONTH != last_month)
+        {
+            sprintf(buf, "%02d", MONTH);
+            LCD_ShowString(52+24+12*3, 0, buf, BLACK, WHITE, 24, 0);
+            last_month = MONTH;
+        }
+        if(DAY != last_day)
+        {
+            sprintf(buf, "%02d", DAY);
+            LCD_ShowString(52+24+12*6, 0, buf, BLACK, WHITE, 24, 0);
+            last_day = DAY;
+        }
+        if(HOUR != last_hour)
+        {
+            sprintf(buf, "%02d", HOUR);
+            LCD_ShowString(52+24+12*9, 0, buf, BLACK, WHITE, 24, 0);
+            last_hour = HOUR;
+        }
+        if(MIN != last_min)
+        {
+            sprintf(buf, "%02d", MIN);
+            LCD_ShowString(52+24+12*12, 0, buf, BLACK, WHITE, 24, 0);
+            last_min = MIN;
+        }
+        if(SEC != last_sec)
+        {
+            sprintf(buf, "%02d", SEC);
+            LCD_ShowString(52+24+12*15, 0, buf, BLACK, WHITE, 24, 0);
+            last_sec = SEC;
+        }
+        
+        // 温度值变化时更新显示
+        if(ntc_wendu != last_temp)
+        {
+            // 先用白色背景覆盖旧温度值（清除）
+            // LCD_Fill(144, 70, 200, 86, WHITE);
+            
+            // 显示新的温度值
+            sprintf(buf, "%.2f", ntc_wendu);
+            LCD_ShowString(185, 30, buf, BLACK, WHITE, 16, 0);
+            last_temp = ntc_wendu;
+        }
 }
 
 /**************** 串口1处理函数 ****************************/
@@ -520,4 +648,127 @@ void RX1_Check(void)
         }         
 	}
     
+}
+
+void    LCDTurnOn(void)
+{
+	printf("LCDTurnOn\r\n"); 
+	LCD_SCK = 0;
+	LCD_MOSI = 0;
+	LCD_RES = 0;
+	LCD_DC = 0;
+	LCD_CS = 0;
+	LCD_BLK = 0;
+	P2_PULL_UP_ENABLE(GPIO_Pin_LOW| GPIO_Pin_4 |GPIO_Pin_5);// 使能内部上拉
+	_nop_();
+    _nop_();
+    _nop_();
+    _nop_();
+	LCD_Init();	
+	LCD_Sleep_sta = 0;
+}
+
+void    LCDTurnOff(void)
+{
+	printf("LCDTurnOff\r\n"); 
+	P2_PULL_UP_DISABLE(GPIO_Pin_LOW| GPIO_Pin_4 |GPIO_Pin_5);// 禁用内部上拉
+	LCD_SCK = 1;//   等同高阻输入
+	LCD_MOSI = 1;
+	LCD_RES = 1;
+	LCD_DC = 1;
+	LCD_CS = 1;
+	LCD_BLK = 0;//低电平关闭背光
+	LCD_Sleep_sta = 1;
+}
+
+void    anjian_check(void)
+{
+	printf("anjian_check:\r\n"); 
+
+//			if(P32==0)   printf("P32:%d\r\n",P32); 
+//			else printf("P32:%d\r\n",P32); 
+		
+	if(!left_key)
+	{
+		if(!left_key_flag)
+		{
+			left_key_cnt++;
+			if(left_key_cnt>50)
+			{
+				left_key_flag = 1;
+				printf("左，返回按下\r\n");
+				update_lcd_flag = 1;
+			}
+			
+		}
+	}
+	else
+	{
+		left_key_cnt = 0;
+		left_key_flag = 0;
+	}
+	
+	if(!red_key)
+	{
+		if(!red_key_flag)
+		{
+			red_key_cnt++;
+			if(red_key_cnt>50)
+			{
+				red_key_flag = 1;
+				printf("-键按下\r\n");
+				update_lcd_flag = 1;
+			}
+			
+		}
+	}
+	else
+	{
+		red_key_cnt = 0;
+		red_key_flag = 0;
+	}
+	
+	if(!add_key)
+	{
+		if(!add_key_flag)
+		{
+			add_key_cnt++;
+			if(add_key_cnt>50)
+			{
+				add_key_flag = 1;
+				printf("+键按下\r\n");
+				update_lcd_flag = 1;
+			}
+			
+		}
+	}
+	else
+	{
+		add_key_cnt = 0;
+		add_key_flag = 0;
+	}
+	
+	if(!right_key)
+	{
+		if(!right_key_flag)
+		{
+			right_key_cnt++;
+			if(right_key_cnt>50)
+			{
+				right_key_flag = 1;
+				printf("右，确认键按下\r\n");
+				update_lcd_flag = 1;
+			}
+			
+		}
+	}
+	else
+	{
+		right_key_cnt = 0;
+		right_key_flag = 0;
+	}
+}
+void    update_lcd(void)
+{
+
 }

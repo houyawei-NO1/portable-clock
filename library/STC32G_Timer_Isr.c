@@ -18,6 +18,7 @@ bit T0_1S;//1s标志
 bit T0_5S;//5s标志
 u16 	cnt_ms_1S;
 u16 	cnt_ms_5S;
+u16 	delay_ms_20S;
 
 //========================================================================
 // 函数: Timer0_ISR_Handler
@@ -32,6 +33,7 @@ void Timer0_ISR_Handler (void) interrupt TMR0_VECTOR		//进中断时已经清除标志
 	T0_1ms = 1;
 	cnt_ms_1S ++ ;
 	cnt_ms_5S ++ ;
+	delay_ms_20S ++;
 	if(cnt_ms_1S>=1000) {T0_1S = 1,cnt_ms_1S=0;}
 	if(cnt_ms_5S>=5000) {T0_5S = 1;cnt_ms_5S=0;}
 	
