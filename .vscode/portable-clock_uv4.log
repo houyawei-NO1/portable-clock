@@ -1,11 +1,11 @@
 Build target 'portable-clock'
 compiling main.c...
 usr\main.c(57): warning C151: pointer truncation: 'huge const' to 'code'
-usr\main.c(93): warning C47: 'n': unreferenced local variable
-usr\main.c(93): warning C47: 'i': unreferenced local variable
-usr\main.c(93): warning C47: 'j': unreferenced local variable
-usr\main.c(94): warning C47: 'sr': unreferenced local variable
-usr\main.c(591): warning C47: 'dat': unreferenced local variable
+usr\main.c(96): warning C47: 'n': unreferenced local variable
+usr\main.c(96): warning C47: 'i': unreferenced local variable
+usr\main.c(96): warning C47: 'j': unreferenced local variable
+usr\main.c(97): warning C47: 'sr': unreferenced local variable
+usr\main.c(636): warning C47: 'dat': unreferenced local variable
 linking...
 *** WARNING L57: UNCALLED FUNCTION, IGNORED FOR OVERLAY PROCESS
     NAME:    LCDShowTest/main
@@ -172,7 +172,7 @@ linking...
 *** WARNING L57: UNCALLED FUNCTION, IGNORED FOR OVERLAY PROCESS
     NAME:    LCD_DrawFillRectangle/lcd
 
-Program Size: data=10.3 edata+hdata=1591 xdata=0 const=12049 code=36827
+Program Size: data=10.5 edata+hdata=1591 xdata=0 const=12035 code=37385
 creating hex file from ".\Objects\portable-clock"...
 ".\Objects\portable-clock" - 0 Error(s), 61 Warning(s).
 Build Time Elapsed:  00:00:01

@@ -8,7 +8,7 @@
 
 3.该分压电路的地用I/O(P3.5)控制，I/O设置为开漏，不比较时，对外设置为1，I/O口浮空，省电；比较时，对外输出0，就是地！
 
-4.中景园2.25inch-76x284-LCD-ZJY225KP屏幕驱动
+4.中景园2.25inch-76x284-LCD-ZJY225KP屏幕驱动，P25 LCD_BLK低电平点亮屏幕，高电平熄屏。
 
 
 ******************************************/
@@ -62,6 +62,9 @@ bit  Rec_OK = 0;                    //rtc时间获取完成标志
 
 float ntc_wendu;
 
+// 屏幕定时控制变量
+bit last_screen_state = 0xFF;  // 记录上次屏幕状态（0=关闭，1=打开），初值为无效状态
+bit should_screen_on;  // 默认屏幕应该打开
 /*************  本地函数声明    **************/
 
 void	Timer_config(void);
@@ -176,20 +179,20 @@ void    PWM_capture(void)
 /******************* IO配置函数 *******************/
 void	GPIO_config(void)
 {
-	P0_MODE_IO_PU(GPIO_Pin_All);//准双向口
-	P1_MODE_IO_PU(GPIO_Pin_All);//准双向口
+	P0_MODE_IN_HIZ(GPIO_Pin_All);
+	P1_MODE_IN_HIZ(GPIO_Pin_All);
 //	P1_MODE_IO_PU(GPIO_Pin_LOW| GPIO_Pin_5|GPIO_Pin_6|GPIO_Pin_7);//准双向口
 //	P1_MODE_OUT_PP(GPIO_Pin_4);//P14电热膜开关，推挽输出	
 	P2_MODE_OUT_OD(GPIO_Pin_LOW| GPIO_Pin_4 |GPIO_Pin_5);//屏幕，准双向口  
 	P2_PULL_UP_ENABLE(GPIO_Pin_LOW| GPIO_Pin_4 |GPIO_Pin_5);// 开漏加内部上拉，简单等同准双向口
-	P2_MODE_IO_PU(GPIO_Pin_6|GPIO_Pin_7);//准双向口  
+	P2_MODE_IN_HIZ(GPIO_Pin_6|GPIO_Pin_7);//准双向口  
 	P3_MODE_IO_PU(GPIO_Pin_LOW);//准双向口  P30P31烧录口
 	P3_MODE_OUT_OD(GPIO_Pin_5);//P35开漏输出
 	P3_MODE_IN_HIZ(GPIO_Pin_7);//P37高阻输入
-	P4_MODE_IO_PU(GPIO_Pin_All);//准双向口  
-	P5_MODE_IO_PU(GPIO_Pin_All);//准双向口  
-	P6_MODE_IO_PU(GPIO_Pin_All);//准双向口 
-	P7_MODE_IO_PU(GPIO_Pin_All);//准双向口  
+	P4_MODE_IN_HIZ(GPIO_Pin_All);
+	P5_MODE_IN_HIZ(GPIO_Pin_All);
+	P6_MODE_IN_HIZ(GPIO_Pin_All);
+	P7_MODE_IN_HIZ(GPIO_Pin_All);
 
 	//CAN1_SW(CAN1_P00_P01);				//CAN1_P00_P01,CAN1_P50_P51,CAN1_P42_P45,CAN1_P70_P71
 
@@ -405,6 +408,30 @@ void Ext_Vcc_Det(void)
 			first_show = 1; // 恢复供电后，下一次更新时间时，重新初始化显示
 		}
 		printf("外部电源连接\r\n"); 
+		
+		// 屏幕定时开关控制：每天7点打开，21点(9PM)关闭
+		// should_screen_on = 1;  // 默认屏幕应该打开
+		// if(HOUR >= 21 || HOUR < 7)  // 如果时间在21:00-23:59或00:00-06:59
+		// {
+		// 	should_screen_on = 0;  // 屏幕应该关闭
+		// }
+		
+		// // 只在屏幕状态需要改变时执行相应操作
+		// if(should_screen_on != last_screen_state)
+		// {
+		// 	if(should_screen_on)
+		// 	{
+		// 		printf("定时打开屏幕(7点)\r\n");
+		// 		LCDTurnOn();
+		// 		first_show = 1;  // 标记需要重新初始化显示
+		// 	}
+		// 	else
+		// 	{
+		// 		printf("定时关闭屏幕(21点)\r\n");
+		// 		LCDTurnOff();
+		// 	}
+		// 	last_screen_state = should_screen_on;
+		// }
 		
 		if(delay_ms_20S > 20*1000) 
 			{	
@@ -659,7 +686,7 @@ void    LCDTurnOn(void)
 	LCD_DC = 0;
 	LCD_CS = 0;
 	LCD_BLK = 0;
-	P2_PULL_UP_ENABLE(GPIO_Pin_LOW| GPIO_Pin_4 |GPIO_Pin_5);// 使能内部上拉
+	P2_PULL_UP_ENABLE(GPIO_Pin_LOW| GPIO_Pin_4);// 使能内部上拉
 	_nop_();
     _nop_();
     _nop_();
@@ -671,13 +698,13 @@ void    LCDTurnOn(void)
 void    LCDTurnOff(void)
 {
 	printf("LCDTurnOff\r\n"); 
-	P2_PULL_UP_DISABLE(GPIO_Pin_LOW| GPIO_Pin_4 |GPIO_Pin_5);// 禁用内部上拉
+	P2_PULL_UP_DISABLE(GPIO_Pin_LOW| GPIO_Pin_4);// 禁用内部上拉
 	LCD_SCK = 1;//   等同高阻输入
 	LCD_MOSI = 1;
 	LCD_RES = 1;
 	LCD_DC = 1;
 	LCD_CS = 1;
-	LCD_BLK = 0;//低电平关闭背光
+    LCD_BLK = 1; // 高电平熄屏（P25: 低电平点亮， 高电平关闭）
 	LCD_Sleep_sta = 1;
 }
 
